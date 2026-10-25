@@ -1,0 +1,23 @@
+# Thư viện cài bằng npm (cài lại bằng npm install)
+node_modules/
+
+# Biến môi trường chứa mật khẩu MySQL, khóa phiên… (chỉ đưa .env.example lên git)
+.env
+.env.*
+!.env.example
+
+# Bản build, log, tệp tạm
+dist/
+build/
+*.log
+npm-debug.log*
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Tài liệu và tệp nén không thuộc mã nguồn
+*.zip
+*.docx
+~$*
+Tom_tat_du_an_PTTKPM.md

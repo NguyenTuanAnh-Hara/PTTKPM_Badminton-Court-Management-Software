@@ -1,0 +1,546 @@
+// Lược đồ CSDL hệ thống quản lý sân cầu lông – 26 bảng, đúng mục 4.2 của báo cáo.
+// Tên bảng, tên cột trong MySQL giữ dạng snake_case (@@map, @map); trong mã dùng camelCase.
+// Ràng buộc CHECK không khai báo được trong Prisma: xem prisma/check_constraints.sql.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum VaiTro {
+  KHACH_HANG
+  LE_TAN
+  HLV
+  QUAN_LY
+}
+
+enum TrangThaiTaiKhoan {
+  HOAT_DONG
+  KHOA_DAT_TRUC_TUYEN
+  KHOA
+}
+
+enum TrangThaiBan {
+  DANG_BAN
+  NGUNG
+}
+
+enum KieuGoiGio {
+  GOI_GIO
+  THE_TRA_TRUOC
+}
+
+enum TrangThaiSan {
+  HOAT_DONG
+  BAO_TRI
+  NGUNG_SU_DUNG
+}
+
+enum LoaiNgay {
+  NGAY_THUONG
+  CUOI_TUAN
+  NGAY_LE
+}
+
+enum TanSuat {
+  HANG_TUAN
+  HANG_THANG
+}
+
+enum KenhDat {
+  TRUC_TUYEN
+  TAI_QUAY
+}
+
+enum TrangThaiDon {
+  CHO_THANH_TOAN
+  DA_XAC_NHAN
+  DANG_SU_DUNG
+  DA_HOAN_THANH
+  DA_HUY
+  HET_HAN
+  KHONG_DEN
+}
+
+enum LoaiDichVu {
+  THIET_BI
+  DO_UONG
+  DICH_VU_KHAC
+}
+
+enum TrangThaiChiTietDichVu {
+  DA_DAT
+  DA_GIAO
+  DA_TRA
+}
+
+enum TrangThaiBuoiHoc {
+  DA_DAT
+  DA_DAY
+  DA_HUY
+}
+
+enum MucDichThu {
+  DAT_SAN
+  GOI_THANH_VIEN
+  MUA_GOI_GIO
+}
+
+enum LoaiGiaoDich {
+  THANH_TOAN
+  HOAN_TIEN
+}
+
+enum PhuongThuc {
+  VNPAY
+  TIEN_MAT
+  CHUYEN_KHOAN
+  GOI_GIO
+  DIEM_THUONG
+}
+
+enum TrangThaiGiaoDich {
+  CHO_XU_LY
+  THANH_CONG
+  THAT_BAI
+}
+
+enum TrangThaiKhieuNai {
+  CHO_XU_LY
+  DA_GIAI_QUYET
+}
+
+enum TrangThaiSuCo {
+  DANG_XU_LY
+  DA_KHAC_PHUC
+}
+
+enum KenhThongBao {
+  SMS
+  EMAIL
+}
+
+model NguoiDung {
+  id          Int               @id @default(autoincrement())
+  hoTen       String            @map("ho_ten") @db.VarChar(100)
+  soDienThoai String            @unique @map("so_dien_thoai") @db.VarChar(15)
+  email       String            @unique @db.VarChar(100)
+  matKhauHash String            @map("mat_khau_hash") @db.VarChar(255)
+  vaiTro      VaiTro            @map("vai_tro")
+  trangThai   TrangThaiTaiKhoan @default(HOAT_DONG) @map("trang_thai")
+  ngayTao     DateTime          @default(now()) @map("ngay_tao")
+
+  khachHang     KhachHang?
+  leTan         NhanVienLeTan?
+  hlv           HuanLuyenVien?
+  khieuNaiXuLy  KhieuNai[]
+  thongBao      ThongBao[]
+  nhatKyThaoTac NhatKyThaoTac[]
+
+  @@map("nguoi_dung")
+}
+
+model KhachHang {
+  nguoiDungId     Int       @id @map("nguoi_dung_id")
+  goiThanhVienId  Int?      @map("goi_thanh_vien_id")
+  hanThanhVien    DateTime? @map("han_thanh_vien") @db.Date
+  diemThuong      Int       @default(0) @map("diem_thuong")
+  soLanNoShow     Int       @default(0) @map("so_lan_no_show")
+
+  nguoiDung    NguoiDung     @relation(fields: [nguoiDungId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  goiThanhVien GoiThanhVien? @relation(fields: [goiThanhVienId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  goiGioChoi   GoiGioChoi[]
+  lichDinhKy   LichDinhKy[]
+  donDatSan    DonDatSan[]
+  thanhToan    ThanhToan[]
+
+  @@map("khach_hang")
+}
+
+model NhanVienLeTan {
+  nguoiDungId Int     @id @map("nguoi_dung_id")
+  caLamViec   String? @map("ca_lam_viec") @db.VarChar(50)
+
+  nguoiDung      NguoiDung        @relation(fields: [nguoiDungId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  donDaLap       DonDatSan[]
+  dichVuGhiNhan  ChiTietDichVu[]
+  thanhToanDaThu ThanhToan[]
+  suCo           SuCo[]
+
+  @@map("nhan_vien_le_tan")
+}
+
+model HuanLuyenVien {
+  nguoiDungId Int     @id @map("nguoi_dung_id")
+  chuyenMon   String? @map("chuyen_mon") @db.VarChar(100)
+  hocPhiGio   Decimal @map("hoc_phi_gio") @db.Decimal(12, 0)
+
+  nguoiDung NguoiDung     @relation(fields: [nguoiDungId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lichRanh  LichRanhHlv[]
+  buoiHoc   BuoiHoc[]
+
+  @@map("huan_luyen_vien")
+}
+
+model LichRanhHlv {
+  id         Int      @id @default(autoincrement())
+  hlvId      Int      @map("hlv_id")
+  ngay       DateTime @db.Date
+  gioBatDau  DateTime @map("gio_bat_dau") @db.Time(0)
+  gioKetThuc DateTime @map("gio_ket_thuc") @db.Time(0)
+
+  hlv HuanLuyenVien @relation(fields: [hlvId], references: [nguoiDungId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([hlvId, ngay, gioBatDau])
+  @@map("lich_ranh_hlv")
+}
+
+model GoiThanhVien {
+  id            Int          @id @default(autoincrement())
+  tenGoi        String       @unique @map("ten_goi") @db.VarChar(50)
+  phi           Decimal      @db.Decimal(12, 0)
+  thoiHanNgay   Int          @map("thoi_han_ngay")
+  heSoTichDiem  Decimal      @map("he_so_tich_diem") @db.Decimal(3, 2)
+  phanTramGiam  Int          @default(0) @map("phan_tram_giam") @db.TinyInt
+  trangThai     TrangThaiBan @map("trang_thai")
+
+  khachHang KhachHang[]
+  thanhToan ThanhToan[]
+
+  @@map("goi_thanh_vien")
+}
+
+model LoaiGoiGio {
+  id          Int        @id @default(autoincrement())
+  tenGoi      String     @map("ten_goi") @db.VarChar(100)
+  loai        KieuGoiGio
+  soGio       Decimal?   @map("so_gio") @db.Decimal(5, 1)
+  menhGia     Decimal?   @map("menh_gia") @db.Decimal(12, 0)
+  giaBan      Decimal    @map("gia_ban") @db.Decimal(12, 0)
+  thoiHanNgay Int        @map("thoi_han_ngay")
+
+  goiDaBan GoiGioChoi[]
+
+  @@map("loai_goi_gio")
+}
+
+model GoiGioChoi {
+  id           Int       @id @default(autoincrement())
+  khachHangId  Int       @map("khach_hang_id")
+  loaiGoiGioId Int       @map("loai_goi_gio_id")
+  soGioConLai  Decimal?  @map("so_gio_con_lai") @db.Decimal(5, 1)
+  soDuConLai   Decimal?  @map("so_du_con_lai") @db.Decimal(12, 0)
+  ngayMua      DateTime  @map("ngay_mua")
+  hanSuDung    DateTime  @map("han_su_dung") @db.Date
+
+  khachHang  KhachHang       @relation(fields: [khachHangId], references: [nguoiDungId], onDelete: Restrict, onUpdate: Restrict)
+  loaiGoiGio LoaiGoiGio      @relation(fields: [loaiGoiGioId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  thanhToan  ThanhToan[]
+
+  @@map("goi_gio_choi")
+}
+
+model MaGiamGia {
+  id           Int      @id @default(autoincrement())
+  ma           String   @unique @db.VarChar(20)
+  phanTramGiam Int      @map("phan_tram_giam") @db.TinyInt
+  giamToiDa    Decimal? @map("giam_toi_da") @db.Decimal(12, 0)
+  soLuotToiDa  Int      @map("so_luot_toi_da")
+  soLuotDaDung Int      @default(0) @map("so_luot_da_dung")
+  ngayBatDau   DateTime @map("ngay_bat_dau") @db.Date
+  ngayKetThuc  DateTime @map("ngay_ket_thuc") @db.Date
+
+  donDatSan DonDatSan[]
+
+  @@map("ma_giam_gia")
+}
+
+model San {
+  id        Int          @id @default(autoincrement())
+  tenSan    String       @unique @map("ten_san") @db.VarChar(50)
+  loaiSan   String?      @map("loai_san") @db.VarChar(50)
+  trangThai TrangThaiSan @default(HOAT_DONG) @map("trang_thai")
+  moTa      String?      @map("mo_ta") @db.VarChar(255)
+
+  lichDinhKy LichDinhKy[]
+  chiTiet    ChiTietDatSan[]
+  suCo       SuCo[]
+
+  @@map("san")
+}
+
+model KhungGio {
+  id         Int      @id
+  gioBatDau  DateTime @unique @map("gio_bat_dau") @db.Time(0)
+  gioKetThuc DateTime @map("gio_ket_thuc") @db.Time(0)
+
+  chiTiet ChiTietDatSan[]
+
+  @@map("khung_gio")
+}
+
+model KhungGia {
+  id         Int       @id @default(autoincrement())
+  gioBatDau  DateTime  @map("gio_bat_dau") @db.Time(0)
+  gioKetThuc DateTime  @map("gio_ket_thuc") @db.Time(0)
+  loaiNgay   LoaiNgay  @map("loai_ngay")
+  donGia     Decimal   @map("don_gia") @db.Decimal(12, 0)
+  apDungTu   DateTime  @map("ap_dung_tu") @db.Date
+  apDungDen  DateTime? @map("ap_dung_den") @db.Date
+
+  chiTiet ChiTietDatSan[]
+
+  @@map("khung_gia")
+}
+
+model NgayLe {
+  id        Int      @id @default(autoincrement())
+  ngay      DateTime @unique @db.Date
+  tenNgayLe String   @map("ten_ngay_le") @db.VarChar(100)
+
+  @@map("ngay_le")
+}
+
+model LichDinhKy {
+  id           Int      @id @default(autoincrement())
+  khachHangId  Int      @map("khach_hang_id")
+  sanId        Int      @map("san_id")
+  tanSuat      TanSuat  @map("tan_suat")
+  thuTrongTuan Int?     @map("thu_trong_tuan") @db.TinyInt
+  gioBatDau    DateTime @map("gio_bat_dau") @db.Time(0)
+  gioKetThuc   DateTime @map("gio_ket_thuc") @db.Time(0)
+  tuNgay       DateTime @map("tu_ngay") @db.Date
+  denNgay      DateTime @map("den_ngay") @db.Date
+
+  khachHang KhachHang   @relation(fields: [khachHangId], references: [nguoiDungId], onDelete: Restrict, onUpdate: Restrict)
+  san       San         @relation(fields: [sanId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  donDatSan DonDatSan[]
+
+  @@map("lich_dinh_ky")
+}
+
+model DonDatSan {
+  id              Int          @id @default(autoincrement())
+  maDon           String       @unique @map("ma_don") @db.VarChar(20)
+  khachHangId     Int?         @map("khach_hang_id")
+  hoTenKhach      String?      @map("ho_ten_khach") @db.VarChar(100)
+  sdtKhach        String?      @map("sdt_khach") @db.VarChar(15)
+  nhanVienLapId   Int?         @map("nhan_vien_lap_id")
+  lichDinhKyId    Int?         @map("lich_dinh_ky_id")
+  maGiamGiaId     Int?         @map("ma_giam_gia_id")
+  kenhDat         KenhDat      @map("kenh_dat")
+  trangThai       TrangThaiDon @map("trang_thai")
+  soLanDoiLich    Int          @default(0) @map("so_lan_doi_lich") @db.TinyInt
+  tongTien        Decimal      @map("tong_tien") @db.Decimal(12, 0)
+  ngayTao         DateTime     @default(now()) @map("ngay_tao")
+  hanGiuCho       DateTime?    @map("han_giu_cho")
+  thoiGianCheckIn DateTime?    @map("thoi_gian_check_in")
+
+  khachHang     KhachHang?      @relation(fields: [khachHangId], references: [nguoiDungId], onDelete: Restrict, onUpdate: Restrict)
+  nhanVienLap   NhanVienLeTan?  @relation(fields: [nhanVienLapId], references: [nguoiDungId], onDelete: Restrict, onUpdate: Restrict)
+  lichDinhKy    LichDinhKy?     @relation(fields: [lichDinhKyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  maGiamGia     MaGiamGia?      @relation(fields: [maGiamGiaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  chiTiet       ChiTietDatSan[]
+  chiTietDichVu ChiTietDichVu[]
+  buoiHoc       BuoiHoc[]
+  thanhToan     ThanhToan[]
+  danhGia       DanhGia?
+
+  @@index([khachHangId, ngayTao])
+  @@index([trangThai, hanGiuCho])
+  @@map("don_dat_san")
+}
+
+model ChiTietDatSan {
+  id          Int      @id @default(autoincrement())
+  donDatSanId Int      @map("don_dat_san_id")
+  sanId       Int      @map("san_id")
+  ngayChoi    DateTime @map("ngay_choi") @db.Date
+  khungGioId  Int      @map("khung_gio_id")
+  khungGiaId  Int      @map("khung_gia_id")
+  donGia      Decimal  @map("don_gia") @db.Decimal(12, 0)
+  conHieuLuc  Int?     @map("con_hieu_luc") @db.TinyInt
+
+  donDatSan DonDatSan @relation(fields: [donDatSanId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  san       San       @relation(fields: [sanId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  khungGio  KhungGio  @relation(fields: [khungGioId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  khungGia  KhungGia  @relation(fields: [khungGiaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  // QT-06: một (sân, ngày, khung giờ) chỉ thuộc một chi tiết còn hiệu lực; con_hieu_luc = NULL khi đơn hủy/hết hạn
+  @@unique([sanId, ngayChoi, khungGioId, conHieuLuc], map: "uq_khong_trung_lich")
+  @@index([ngayChoi, sanId])
+  @@map("chi_tiet_dat_san")
+}
+
+model DichVu {
+  id         Int          @id @default(autoincrement())
+  tenDichVu  String       @map("ten_dich_vu") @db.VarChar(100)
+  loai       LoaiDichVu
+  donGia     Decimal      @map("don_gia") @db.Decimal(12, 0)
+  soLuongTon Int          @map("so_luong_ton")
+  tienCoc    Decimal      @default(0) @map("tien_coc") @db.Decimal(12, 0)
+  trangThai  TrangThaiBan @map("trang_thai")
+
+  chiTiet ChiTietDichVu[]
+
+  @@map("dich_vu")
+}
+
+model ChiTietDichVu {
+  id                 Int                    @id @default(autoincrement())
+  donDatSanId        Int                    @map("don_dat_san_id")
+  dichVuId           Int                    @map("dich_vu_id")
+  soLuong            Int                    @map("so_luong")
+  donGia             Decimal                @map("don_gia") @db.Decimal(12, 0)
+  tienCoc            Decimal                @default(0) @map("tien_coc") @db.Decimal(12, 0)
+  trangThai          TrangThaiChiTietDichVu @map("trang_thai")
+  nhanVienGhiNhanId  Int?                   @map("nhan_vien_ghi_nhan_id")
+
+  donDatSan       DonDatSan      @relation(fields: [donDatSanId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  dichVu          DichVu         @relation(fields: [dichVuId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  nhanVienGhiNhan NhanVienLeTan? @relation(fields: [nhanVienGhiNhanId], references: [nguoiDungId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("chi_tiet_dich_vu")
+}
+
+model BuoiHoc {
+  id          Int              @id @default(autoincrement())
+  donDatSanId Int              @map("don_dat_san_id")
+  hlvId       Int              @map("hlv_id")
+  ngay        DateTime         @db.Date
+  gioBatDau   DateTime         @map("gio_bat_dau") @db.Time(0)
+  gioKetThuc  DateTime         @map("gio_ket_thuc") @db.Time(0)
+  hocPhi      Decimal          @map("hoc_phi") @db.Decimal(12, 0)
+  trangThai   TrangThaiBuoiHoc @map("trang_thai")
+
+  donDatSan DonDatSan     @relation(fields: [donDatSanId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  hlv       HuanLuyenVien @relation(fields: [hlvId], references: [nguoiDungId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("buoi_hoc")
+}
+
+model ThanhToan {
+  id              Int               @id @default(autoincrement())
+  khachHangId     Int?              @map("khach_hang_id")
+  mucDich         MucDichThu        @map("muc_dich")
+  donDatSanId     Int?              @map("don_dat_san_id")
+  goiThanhVienId  Int?              @map("goi_thanh_vien_id")
+  goiGioChoiId    Int?              @map("goi_gio_choi_id")
+  nhanVienThuId   Int?              @map("nhan_vien_thu_id")
+  loai            LoaiGiaoDich
+  phuongThuc      PhuongThuc        @map("phuong_thuc")
+  soDiemSuDung    Int?              @map("so_diem_su_dung")
+  soTien          Decimal           @map("so_tien") @db.Decimal(12, 0)
+  maGiaoDichCong  String?           @unique @map("ma_giao_dich_cong") @db.VarChar(50)
+  trangThai       TrangThaiGiaoDich @map("trang_thai")
+  thoiGian        DateTime          @default(now()) @map("thoi_gian")
+
+  khachHang    KhachHang?     @relation(fields: [khachHangId], references: [nguoiDungId], onDelete: Restrict, onUpdate: Restrict)
+  donDatSan    DonDatSan?     @relation(fields: [donDatSanId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  goiThanhVien GoiThanhVien?  @relation(fields: [goiThanhVienId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  goiGioChoi   GoiGioChoi?    @relation(fields: [goiGioChoiId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  nhanVienThu  NhanVienLeTan? @relation(fields: [nhanVienThuId], references: [nguoiDungId], onDelete: Restrict, onUpdate: Restrict)
+  hoaDon       HoaDon?
+
+  @@index([thoiGian, trangThai])
+  @@map("thanh_toan")
+}
+
+model HoaDon {
+  id          Int      @id @default(autoincrement())
+  maHoaDon    String   @unique @map("ma_hoa_don") @db.VarChar(20)
+  thanhToanId Int      @unique @map("thanh_toan_id")
+  ngayLap     DateTime @default(now()) @map("ngay_lap")
+  tongTien    Decimal  @map("tong_tien") @db.Decimal(12, 0)
+
+  thanhToan ThanhToan @relation(fields: [thanhToanId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("hoa_don")
+}
+
+model DanhGia {
+  id          Int      @id @default(autoincrement())
+  donDatSanId Int      @unique @map("don_dat_san_id")
+  soSao       Int      @map("so_sao") @db.TinyInt
+  noiDung     String?  @map("noi_dung") @db.Text
+  thoiGian    DateTime @default(now()) @map("thoi_gian")
+
+  donDatSan DonDatSan @relation(fields: [donDatSanId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  khieuNai  KhieuNai?
+
+  @@map("danh_gia")
+}
+
+model KhieuNai {
+  id            Int               @id @default(autoincrement())
+  danhGiaId     Int               @unique @map("danh_gia_id")
+  quanLyId      Int?              @map("quan_ly_id")
+  trangThai     TrangThaiKhieuNai @map("trang_thai")
+  noiDungXuLy   String?           @map("noi_dung_xu_ly") @db.Text
+  thoiGianTao   DateTime          @default(now()) @map("thoi_gian_tao")
+  thoiGianXuLy  DateTime?         @map("thoi_gian_xu_ly")
+
+  danhGia DanhGia    @relation(fields: [danhGiaId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  quanLy  NguoiDung? @relation(fields: [quanLyId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("khieu_nai")
+}
+
+model SuCo {
+  id                 Int           @id @default(autoincrement())
+  sanId              Int           @map("san_id")
+  leTanId            Int           @map("le_tan_id")
+  moTa               String        @map("mo_ta") @db.VarChar(255)
+  trangThai          TrangThaiSuCo @map("trang_thai")
+  thoiGianGhiNhan    DateTime      @default(now()) @map("thoi_gian_ghi_nhan")
+  thoiGianKhacPhuc   DateTime?     @map("thoi_gian_khac_phuc")
+
+  san   San           @relation(fields: [sanId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  leTan NhanVienLeTan @relation(fields: [leTanId], references: [nguoiDungId], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("su_co")
+}
+
+model ThongBao {
+  id          Int          @id @default(autoincrement())
+  nguoiNhanId Int?         @map("nguoi_nhan_id")
+  diaChiNhan  String       @map("dia_chi_nhan") @db.VarChar(100)
+  kenh        KenhThongBao
+  noiDung     String       @map("noi_dung") @db.Text
+  daGui       Boolean      @default(false) @map("da_gui")
+  soLanThu    Int          @default(0) @map("so_lan_thu") @db.TinyInt
+  thoiGianTao DateTime     @default(now()) @map("thoi_gian_tao")
+
+  nguoiNhan NguoiDung? @relation(fields: [nguoiNhanId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@index([daGui, soLanThu])
+  @@map("thong_bao")
+}
+
+model NhatKyThaoTac {
+  id          Int      @id @default(autoincrement())
+  nguoiDungId Int      @map("nguoi_dung_id")
+  hanhDong    String   @map("hanh_dong") @db.VarChar(50)
+  doiTuong    String   @map("doi_tuong") @db.VarChar(50)
+  doiTuongId  Int      @map("doi_tuong_id")
+  noiDung     String?  @map("noi_dung") @db.Text
+  thoiGian    DateTime @default(now()) @map("thoi_gian")
+
+  nguoiDung NguoiDung @relation(fields: [nguoiDungId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("nhat_ky_thao_tac")
+}
+
+// Bảng phiên đăng nhập do thư viện express-mysql-session sử dụng – không thuộc 26 bảng nghiệp vụ của mục 4.2.
+// Khai báo ở đây để "prisma db push" không xóa bảng này.
+model PhienDangNhap {
+  sessionId String  @id @map("session_id") @db.VarChar(128)
+  expires   Int     @db.UnsignedInt
+  data      String? @db.MediumText
+
+  @@map("sessions")
+}
