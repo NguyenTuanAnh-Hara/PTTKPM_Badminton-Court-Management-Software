@@ -12,6 +12,6 @@ export const ThanhToanController = {
     res.json({ RspCode: kq.RspCode, Message: kq.Message });
   },
   ketQuaTrinhDuyet: async (req, res) => res.json(await thanhToan.ketQuaChoTrinhDuyet(req.query)),
-  giaLap: async (req, res) => res.json(await thanhToan.giaLapKetQua(req.query.txnRef, req.query.ketQua === 'thanh-cong')),
+  giaLap: async (req, res) => res.json(await thanhToan.giaLapKetQua(req.user, req.query.txnRef, req.query.ketQua === 'thanh-cong')),
   layHoaDon: async (req, res) => res.json(await thanhToan.layHoaDon(req.user, req.params.maHoaDon)),
 };

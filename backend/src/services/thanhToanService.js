@@ -14,9 +14,6 @@ import { bayGio, homNay, congNgay, congPhut, sangNgayDb, chuoiNgay, hienThiNgay 
 import { soTien, dinhDangTien } from '../utils/tien.js';
 import { loi } from '../utils/errors.js';
 
-// Lịch mới đang chờ khách thanh toán chênh lệch (UC02.5 – A1), khóa là mã giao dịch
-const choDoiLich = new Map();
-
 async function taoHoaDon(db, thanhToanId, tongTien) {
   return db.hoaDon.create({ data: { maHoaDon: taoMa('HD'), thanhToanId, tongTien } });
 }
@@ -247,20 +244,20 @@ export async function taoThanhToanDoiLich(user, don, lichMoi, soTienChenh, ip) {
     data: {
       khachHangId: don.khachHangId, mucDich: 'DAT_SAN', donDatSanId: don.id, loai: 'THANH_TOAN', phuongThuc: 'VNPAY',
       soTien: soTienChenh, trangThai: 'CHO_XU_LY',
+      // Lưu trong CSDL để server khởi động lại giữa chừng vẫn áp dụng/hoàn đúng khoản chênh lệch
+      duLieuDoiLich: { ...lichMoi, nguoiThucHienId: user.id, hetHan: congPhut(bayGio(), 10).getTime() },
     },
   });
-  choDoiLich.set(tt.id, { ...lichMoi, nguoiThucHienId: user.id, hetHan: congPhut(bayGio(), 10) });
   const paymentUrl = vnpayGateway.taoUrlThanhToan(tt, { noiDung: `Doi lich don ${don.maDon}`, ip, hetHanLuc: congPhut(bayGio(), 10) });
   return { maGiaoDich: VnpayGateway.maThamChieu(tt.id), paymentUrl };
 }
 
 async function ghiNhanDoiLich(tx, tt, maGiaoDich) {
-  const cho = choDoiLich.get(tt.id);
-  choDoiLich.delete(tt.id);
+  const cho = tt.duLieuDoiLich;
   await tx.thanhToan.update({ where: { id: tt.id }, data: { trangThai: 'THANH_CONG', maGiaoDichCong: maGiaoDich, thoiGian: bayGio() } });
   const don = await donDatSanRepository.findById(tt.donDatSanId, tx);
   let apDung = false;
-  if (cho.hetHan >= bayGio() && don.trangThai === 'DA_XAC_NHAN') {
+  if (cho.hetHan >= bayGio().getTime() && don.trangThai === 'DA_XAC_NHAN') {
     try {
       await kiemTraSanKhung(cho.ngayChoi, cho.dong, { laNhanVien: true, boQuaDonId: don.id, db: tx });
       await apDungDoiLich(tx, don.id, cho, cho.nguoiThucHienId);
@@ -432,7 +429,7 @@ export async function xuLyKetQua(params) {
       await tx.thanhToan.update({ where: { id: tt.id }, data: { trangThai: 'THANH_CONG', thoiGian: bayGio() } });
       return ghiNhanGoiGio(tx, tt);
     }
-    if (choDoiLich.has(tt.id)) return ghiNhanDoiLich(tx, tt, maGiaoDich);
+    if (tt.duLieuDoiLich) return ghiNhanDoiLich(tx, tt, maGiaoDich);
     const don = await tx.donDatSan.findUnique({ where: { id: tt.donDatSanId }, include: { maGiamGia: true } });
     if (don.trangThai === 'DA_HUY') {
       // Đơn đã bị hủy trong lúc khách đang thanh toán: ghi nhận rồi hoàn lại toàn bộ
@@ -477,11 +474,12 @@ export async function ketQuaChoTrinhDuyet(params) {
 }
 
 /** Chỉ ở chế độ giả lập: tạo tham số kết quả có chữ ký như VNPAY gửi về */
-export async function giaLapKetQua(txnRef, thanhCong) {
+export async function giaLapKetQua(user, txnRef, thanhCong) {
   if (!vnpayGateway.laGiaLap) throw loi.khongDuQuyen('Chức năng giả lập chỉ dùng khi VNPAY_MODE=mock');
   const id = VnpayGateway.idTuMaThamChieu(txnRef);
   const tt = id ? await prisma.thanhToan.findUnique({ where: { id } }) : null;
   if (!tt) throw loi.khongTimThay('giao dịch', 'KHONG_TIM_THAY_GIAO_DICH');
+  if (user.vaiTro === 'KHACH_HANG' && tt.khachHangId !== user.id) throw loi.khongDuQuyen();
   return vnpayGateway.taoKetQuaGiaLap({ txnRef, soTien: soTien(tt.soTien), thanhCong });
 }
 
@@ -502,7 +500,8 @@ export async function layHoaDon(user, maHoaDon) {
     },
   });
   if (!hd) throw loi.khongTimThay('hóa đơn', 'KHONG_TIM_THAY_HOA_DON');
-  if (user.vaiTro === 'KHACH_HANG' && hd.thanhToan.khachHangId !== user.id) throw loi.khongDuQuyen();
+  const laNhanVien = ['LE_TAN', 'QUAN_LY'].includes(user.vaiTro);
+  if (!laNhanVien && hd.thanhToan.khachHangId !== user.id) throw loi.khongDuQuyen();
   const t = hd.thanhToan;
   const ds = [];
   if (t.mucDich === 'DAT_SAN' && t.donDatSan) {
