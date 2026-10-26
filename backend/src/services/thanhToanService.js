@@ -5,10 +5,11 @@ import { notificationSender } from '../agents/notificationSender.js';
 import { donDatSanRepository } from '../repositories/donDatSanRepository.js';
 import { thanhToanRepository } from '../repositories/thanhToanRepository.js';
 import { chiTietDatSanRepository } from '../repositories/chiTietDatSanRepository.js';
-import { bangTinhTienDon, capNhatTongTien, sangDTO, thongTinKhach, kiemTraGoiGio } from './donTinhToan.js';
+import { bangTinhTienDon, capNhatTongTien, sangDTO, thongTinKhach, kiemTraGoiGio, tongHopDon } from './donTinhToan.js';
 import { hanThanhVienMoi } from './rules/diemThuongPolicy.js';
 import { kiemTraQuyenDon, chuyenTrangThai, apDungDoiLich, kiemTraSanKhung } from './datSanService.js';
 import { ghiNhatKy } from './nhatKyService.js';
+import { hoanTienDon } from './hoanTienService.js';
 import { taoMa } from '../utils/maSo.js';
 import { bayGio, homNay, congNgay, congPhut, sangNgayDb, chuoiNgay, hienThiNgay } from '../utils/thoiGian.js';
 import { soTien, dinhDangTien } from '../utils/tien.js';
@@ -137,16 +138,11 @@ async function ghiNhanThanhToanDon(tx, donId, luaChon, chinh) {
       await chuyenTrangThai(tx, don, 'DA_XAC_NHAN', { hanGiuCho: null });
       ghiChu = 'Thanh toán về sau khi hết giữ chỗ, khung vẫn trống nên đơn được khôi phục.';
     } else {
-      ghiChu = 'Thanh toán về sau khi hết giữ chỗ và khung đã có người đặt, hệ thống hoàn 100% số tiền vừa thu.';
-      for (const t of dsTao.filter((x) => x.phuongThuc !== 'DIEM_THUONG' && x.phuongThuc !== 'GOI_GIO')) {
-        await vnpayGateway.hoanTien(t, soTien(t.soTien));
-        await tx.thanhToan.create({
-          data: {
-            khachHangId: don.khachHangId, mucDich: 'DAT_SAN', donDatSanId: don.id, loai: 'HOAN_TIEN',
-            phuongThuc: t.phuongThuc, soTien: t.soTien, trangThai: 'THANH_CONG',
-          },
-        });
-      }
+      ghiChu = 'Thanh toán về sau khi hết giữ chỗ và khung đã có người đặt, hệ thống hoàn 100% số tiền vừa thu, trả lại điểm và giờ của gói.';
+      // Hoàn đủ mọi kênh vừa thu (VNPAY, gói giờ / thẻ trả trước, điểm thưởng) – QT-12
+      await hoanTienDon(tx, await donDatSanRepository.findById(don.id, tx), 1);
+      // Đơn không thành: trả lại lượt dùng mã giảm giá vừa tính
+      if (!daDungMaTruoc && ma) await tx.maGiamGia.update({ where: { id: ma.id }, data: { soLuotDaDung: { decrement: 1 } } });
     }
   }
   let hoaDon = null;
@@ -411,19 +407,45 @@ export async function xuLyKetQua(params) {
   if (!tt) return { RspCode: '01', Message: 'Order not found' };
   if (Number(params.vnp_Amount) / 100 !== soTien(tt.soTien)) return { RspCode: '04', Message: 'Invalid amount', thanhToan: tt };
   const maGiaoDich = params.vnp_TransactionNo ? `VNP${params.vnp_TransactionNo}` : null;
-  if (tt.trangThai !== 'CHO_XU_LY' || (maGiaoDich && (await thanhToanRepository.existsByMaGiaoDichCong(maGiaoDich)))) {
+  // Giao dịch “Thất bại” mà chưa có mã của cổng là do HỆ THỐNG đóng lại (khách hủy đơn khi đang thanh toán,
+  // hoặc tạo yêu cầu thanh toán mới thay cho yêu cầu cũ). Nếu cổng vẫn báo đã trừ tiền thì phải ghi nhận và hoàn lại.
+  const heThongDaDong = tt.trangThai === 'THAT_BAI' && !tt.maGiaoDichCong;
+  if ((tt.trangThai !== 'CHO_XU_LY' && !heThongDaDong) || (maGiaoDich && (await thanhToanRepository.existsByMaGiaoDichCong(maGiaoDich)))) {
     return { RspCode: '02', Message: 'Order already confirmed', thanhToan: tt };
   }
   const thanhCong = params.vnp_ResponseCode === '00' && (params.vnp_TransactionStatus ?? '00') === '00';
+  if (!thanhCong && heThongDaDong) return { RspCode: '00', Message: 'Confirm Success', thanhCong: false, thanhToan: tt };
 
   const kq = await prisma.$transaction(async (tx) => {
-    // Khóa bản ghi: chỉ một tiến trình chuyển được giao dịch khỏi trạng thái “Chờ xử lý”
+    // Khóa bản ghi: chỉ một tiến trình chuyển được giao dịch khỏi trạng thái hiện tại
     if (!thanhCong) {
       const n = await tx.thanhToan.updateMany({ where: { id: tt.id, trangThai: 'CHO_XU_LY' }, data: { trangThai: 'THAT_BAI' } });
       return n.count ? { thatBai: true } : { daXuLy: true };
     }
-    const n = await tx.thanhToan.updateMany({ where: { id: tt.id, trangThai: 'CHO_XU_LY' }, data: { maGiaoDichCong: maGiaoDich } });
+    const n = await tx.thanhToan.updateMany({
+      where: { id: tt.id, trangThai: tt.trangThai, maGiaoDichCong: null },
+      data: { maGiaoDichCong: maGiaoDich },
+    });
     if (!n.count) return { daXuLy: true };
+
+    // Tiền về cho một giao dịch không còn hiệu lực → ghi nhận rồi hoàn 100% (không mất tiền của khách)
+    let moCoi = heThongDaDong;
+    if (!moCoi && tt.mucDich === 'DAT_SAN' && !choDoiLich.has(tt.id)) {
+      // Thanh toán bình thường luôn ≤ số còn nợ của đơn. Lớn hơn nghĩa là yêu cầu đã cũ
+      // (ví dụ thanh toán chênh lệch đổi lịch nhưng backend vừa khởi động lại nên mất lịch chờ)
+      const donHienTai = await donDatSanRepository.findById(tt.donDatSanId, tx);
+      if (donHienTai.trangThai !== 'DA_HUY') {
+        let conNo = soTien(donHienTai.tongTien) - tongHopDon(donHienTai).daThanhToan;
+        try {
+          // Tính lại như lúc tạo yêu cầu (hạng thành viên có thể vừa đổi) và lấy giá trị lớn hơn cho an toàn
+          conNo = Math.max(conNo, (await bangTinhTienDon(donHienTai, {}, tx)).bang.conLai);
+        } catch {
+          /* giữ conNo theo cột tong_tien */
+        }
+        if (soTien(tt.soTien) > conNo + 999) moCoi = true;
+      }
+    }
+    if (moCoi) return ghiNhanVaHoanLai(tx, tt);
     if (tt.mucDich === 'GOI_THANH_VIEN') {
       await tx.thanhToan.update({ where: { id: tt.id }, data: { trangThai: 'THANH_CONG', thoiGian: bayGio() } });
       return ghiNhanThanhVien(tx, tt);
@@ -455,7 +477,28 @@ export async function xuLyKetQua(params) {
   if (kq.thatBai) return { RspCode: '00', Message: 'Confirm Success', thanhCong: false, thanhToan: tt };
   if (kq.don) thongBaoDaThanhToan(kq);
   else if (kq.khachHangId) notificationSender.guiNguoiDung(kq.khachHangId, kq.ghiChu);
-  return { RspCode: '00', Message: 'Confirm Success', thanhCong: true, thanhToan: tt, ghiChu: kq.ghiChu, hoaDon: kq.hoaDon?.maHoaDon };
+  return { RspCode: '00', Message: 'Confirm Success', thanhCong: true, thanhToan: tt, ghiChu: kq.ghiChu, hoaDon: kq.hoaDon?.maHoaDon, daHoanLai: Boolean(kq.daHoanLai) };
+}
+
+/** Ghi nhận khoản tiền của một giao dịch không còn hiệu lực rồi hoàn lại toàn bộ về VNPAY (QT-12) */
+async function ghiNhanVaHoanLai(tx, tt) {
+  await tx.thanhToan.update({
+    where: { id: tt.id },
+    data: { trangThai: 'THANH_CONG', thoiGian: bayGio(), goiGioChoiId: tt.mucDich === 'MUA_GOI_GIO' ? tt.goiGioChoiId : null, soDiemSuDung: null },
+  });
+  await vnpayGateway.hoanTien(tt, soTien(tt.soTien));
+  await tx.thanhToan.create({
+    data: {
+      khachHangId: tt.khachHangId, mucDich: tt.mucDich, donDatSanId: tt.donDatSanId, goiThanhVienId: tt.goiThanhVienId,
+      goiGioChoiId: tt.mucDich === 'MUA_GOI_GIO' ? tt.goiGioChoiId : null,
+      loai: 'HOAN_TIEN', phuongThuc: 'VNPAY', soTien: tt.soTien, trangThai: 'THANH_CONG',
+    },
+  });
+  const don = tt.donDatSanId ? await tx.donDatSan.findUnique({ where: { id: tt.donDatSanId } }) : null;
+  const ghiChu =
+    `Giao dịch ${VnpayGateway.maThamChieu(tt.id)} không còn hiệu lực (đơn đã hủy, đã có yêu cầu thanh toán mới hoặc lịch chờ đã hết hạn). ` +
+    `Số tiền ${dinhDangTien(tt.soTien)} sẽ được hoàn lại về tài khoản thanh toán của bạn.`;
+  return don ? { don, ghiChu, daHoanLai: true } : { khachHangId: tt.khachHangId, ghiChu, daHoanLai: true };
 }
 
 /** Kết quả hiển thị cho trang /thanh-toan/ket-qua sau khi trình duyệt quay về */
@@ -473,6 +516,7 @@ export async function ketQuaChoTrinhDuyet(params) {
     maDon: tt.donDatSan?.maDon ?? null,
     maHoaDon: tt.hoaDon?.maHoaDon ?? null,
     ghiChu: r.ghiChu ?? null,
+    daHoanLai: Boolean(r.daHoanLai),
   };
 }
 

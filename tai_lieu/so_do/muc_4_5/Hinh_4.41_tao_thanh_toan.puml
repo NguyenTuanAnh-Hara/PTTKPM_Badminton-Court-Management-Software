@@ -1,0 +1,48 @@
+@startuml
+!include chung.iuml
+title Thanh toán trực tuyến – UC03.1: tính tiền và tạo giao dịch VNPAY
+actor "Khách hàng" as KH
+boundary "ThanhToanPage\n(React)" as UI
+control "ThanhToanController" as C
+control "ThanhToanService" as S
+entity "DonDatSanRepository" as DR
+control "GiaCalculator" as G
+entity "ThanhToanRepository" as TR
+control "PaymentGateway\n(VnpayGateway)" as P
+participant "Cổng VNPAY" as V
+
+KH -> UI : nhập mã giảm giá, số điểm,\nchọn gói giờ
+loop mỗi lần đổi lựa chọn
+  UI -> C : POST /thanh-toan/tinh-tien\n{maDon, maGiamGia, soDiem, goiGioChoiId}
+  C -> S : tinhTien(user, req)
+  S -> DR : findByMaDon(maDon)
+  DR --> S : DonDatSan (kèm chi tiết, giao dịch)
+  S -> G : apUuDai(don, ma, soDiem, goi)\nQT-10: hạng → mã → điểm → gói giờ; QT-22, QT-23
+  G --> S : BangTinhTienDTO
+  S --> UI : 200 { bangTinhTien, diemHienCo, goiGioDungDuoc[] }
+  UI -> KH : cập nhật bảng tính tiền
+end
+KH -> UI : bấm "Thanh toán qua VNPAY"
+UI -> C : POST /thanh-toan {maDon, maGiamGia, soDiem, goiGioChoiId}
+C -> S : taoYeuCau(user, req)
+S -> DR : findByMaDon(maDon)
+S -> S : kiểm tra chủ đơn; trạng thái CHO_THANH_TOAN /\nDA_XAC_NHAN / DANG_SU_DUNG; còn hạn giữ chỗ
+alt quá hạn giữ chỗ
+  S --> UI : 409 DON_HET_HAN_GIU_CHO
+end
+S -> G : apUuDai(...) – tính lại phía máy chủ,\nkhông tin số tiền do client gửi
+G --> S : BangTinhTienDTO (phaiTra)
+alt phaiTra = 0 (ưu đãi phủ hết – A2)
+  S -> S : ghi nhận ngay: trừ điểm, trừ gói,\nđơn → DA_XAC_NHAN, tạo hóa đơn
+  S --> UI : 201 { daThanhToan: true, hoaDon }
+else phaiTra > 0
+  S -> TR : $transaction: các giao dịch CHO_XU_LY cũ → THAT_BAI;\ncreate ThanhToan(VNPAY, phaiTra, CHO_XU_LY,\nlưu tạm soDiem, goiGioChoiId)
+  TR --> S : thanhToan (id)
+  S -> P : taoUrlThanhToan(tt, hetHanLuc = hanGiuCho)
+  P -> P : vnp_TxnRef = "TT"+id, vnp_Amount = soTien × 100,\nký HMAC-SHA512 bằng hashSecret
+  P --> S : paymentUrl
+  S --> UI : 201 { maGiaoDich, bangTinhTien, paymentUrl }
+  UI -> V : chuyển trình duyệt tới paymentUrl
+  V -> KH : trang thanh toán của ngân hàng / ví
+end
+@enduml

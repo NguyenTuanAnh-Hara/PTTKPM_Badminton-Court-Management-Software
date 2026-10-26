@@ -16,8 +16,10 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
-# Tài liệu và tệp nén không thuộc mã nguồn
+# Tệp nén, tệp khóa tạm của Word
 *.zip
-*.docx
 ~$*
-Tom_tat_du_an_PTTKPM.md
+
+# Chỉ đưa bản báo cáo chính thức trong tai_lieu/ lên git
+*.docx
+!tai_lieu/*.docx

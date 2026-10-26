@@ -1,0 +1,58 @@
+@startuml
+!include chung.iuml
+title Hủy lịch đặt sân và hoàn tiền – UC02.4 «include» Hoàn tiền
+actor "Khách hàng" as KH
+boundary "ChiTietDon,\nHuyDonModal" as UI
+control "DatSanController" as C
+control "DatSanService" as S
+entity "DonDatSanRepository" as DR
+control "HoanTienPolicy" as H
+control "PaymentGateway\n(VnpayGateway)" as P
+control "TrangThaiDon" as T
+database "MySQL\n(Prisma)" as DB
+control "NotificationSender" as N
+
+KH -> UI : mở chi tiết đơn
+UI -> C : GET /don-dat-san/{maDon}
+C -> S : layChiTietDon(user, maDon)
+S -> H : tinhTienHoan(don, now) → duKienHoan
+S --> UI : DonDatSanDTO + duKienHoan {duocHuy, soTienHoan, diemHoan, ghiChu}
+KH -> UI : bấm "Hủy đặt sân"
+UI -> KH : hộp thoại: số tiền, số điểm dự kiến hoàn và quy định QT-11
+KH -> UI : "Xác nhận hủy" (lý do)
+UI -> C : POST /don-dat-san/{maDon}/huy {lyDo}
+C -> S : huyDon(user, maDon, {lyDo})
+S -> DB : $transaction bắt đầu
+S -> DR : findByMaDon(maDon)
+DR --> S : DonDatSan (chi tiết, dịch vụ, buổi học, giao dịch)
+S -> S : kiemTraQuyenDon(user, don)\nKH chỉ hủy đơn của mình
+alt don.trangThai = DA_XAC_NHAN (đã thanh toán)
+  S -> H : choPhepHuy(don, now)\n≥ 24 giờ: 100%; 2 – <24 giờ: 50% tiền sân,\ndịch vụ chưa giao và học phí 100%; < 2 giờ: không cho hủy
+  alt còn dưới 2 giờ
+    H --> S : false
+    S --> UI : 422 KHONG_DUOC_HUY
+  end
+  H --> S : hệ số hoàn f
+  loop mỗi kênh đã thu (QT-12)
+    alt VNPAY
+      S -> P : hoanTien(giaoDichGoc, soTien × f)
+    else Gói giờ / thẻ trả trước
+      S -> DB : cộng lại giờ / số dư vào gói
+    end
+    S -> DB : create ThanhToan(loai = HOAN_TIEN, cùng phương thức)
+  end
+  S -> DB : trả lại đủ điểm đã dùng
+else don.trangThai = CHO_THANH_TOAN
+  S -> S : không hoàn tiền (chưa thu)
+else trạng thái khác
+  S --> UI : 409 CHUYEN_TRANG_THAI_KHONG_HOP_LE
+end
+S -> T : choPhepChuyen(trangThai, DA_HUY)
+T --> S : true
+S -> DB : đơn → DA_HUY; chi tiết con_hieu_luc = NULL (khung mở lại);\nxóa dịch vụ chưa giao, hủy buổi học (QT-14);\ngiao dịch CHO_XU_LY → THAT_BAI; ghi nhật ký HUY_DON
+S -> DB : commit
+S ->> N : gui("đơn đã hủy, hoàn ... về kênh đã thanh toán")
+S --> C : {tongHoan, diemHoan, chiTietHoan[]}
+C --> UI : 200
+UI -> KH : "Đã hủy đơn. Hoàn 105.500 đ và 50 điểm ..."\nlịch sử giao dịch thêm các dòng Hoàn tiền
+@enduml

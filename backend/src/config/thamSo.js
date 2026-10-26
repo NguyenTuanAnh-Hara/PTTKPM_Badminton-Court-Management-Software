@@ -23,6 +23,7 @@ const thamSo = {
   GIO_HUY_TOI_THIEU: 2,
   PHAN_TRAM_HOAN_SAN: so('PHAN_TRAM_HOAN_SAN', 50),
   SO_LAN_DOI_LICH_TOI_DA: so('SO_LAN_DOI_LICH_TOI_DA', 1),
+  PHUT_TU_CHOI_CHUYEN_SAN: 30, // QT-27: khách được từ chối sân thay thế trong 30 phút
 
   // Check-in, no-show (QT-16 → QT-19)
   PHUT_CHECK_IN_TRUOC: so('PHUT_CHECK_IN_TRUOC', 15),

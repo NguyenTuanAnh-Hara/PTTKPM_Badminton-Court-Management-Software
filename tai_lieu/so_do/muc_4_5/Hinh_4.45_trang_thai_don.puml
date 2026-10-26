@@ -1,0 +1,36 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 12
+skinparam dpi 150
+skinparam StateFontStyle bold
+skinparam StateAttributeFontStyle plain
+skinparam backgroundColor white
+skinparam StateBackgroundColor white
+hide empty description
+title Biểu đồ trạng thái của đơn đặt sân (Bảng 3.5i, QT-30)
+
+state "Chờ thanh toán\nCHO_THANH_TOAN" as CHO : entry / giữ khung (con_hieu_luc = 1)\nentry / hanGiuCho = now + 10 phút (lễ tân: 30 phút)\ndo / đếm ngược thời gian giữ chỗ
+state "Đã xác nhận\nDA_XAC_NHAN" as XN : entry / tạo hóa đơn, gửi thông báo\ndo / chờ check-in
+state "Đang sử dụng\nDANG_SU_DUNG" as SD : entry / ghi thoiGianCheckIn\ndo / giao, nhận thiết bị
+state "Đã hoàn thành\nDA_HOAN_THANH" as HT : entry / cộng điểm thưởng (QT-21)
+state "Đã hủy\nDA_HUY" as HUY : entry / trả khung, hoàn tiền (QT-11 → QT-15)
+state "Hết hạn\nHET_HAN" as HH : entry / trả khung (con_hieu_luc = NULL)
+state "Không đến\nKHONG_DEN" as KD : entry / soLanNoShow + 1, xét khóa (QT-18)
+
+[*] --> CHO : datSan() [QT-01 → QT-06 thỏa]
+CHO --> XN : thanh toán thành công\n(IPN / vnpay-return / tại quầy)\n[đã thu đủ]
+CHO --> HUY : huyDon() [khách / lễ tân]
+CHO --> HH : Bộ hẹn giờ: huyDonQuaHan()\n[now > hanGiuCho]
+HH --> XN : kết quả thanh toán về muộn\n[khung vẫn còn trống]
+XN --> SD : checkIn()\n[giờ bắt đầu ±15 phút ∧ không còn nợ]
+XN --> HUY : huyDon()\n[còn ≥ 2 giờ] / hoàn theo QT-11\nhoặc sự cố sân [doPhiaSan] / hoàn 100%
+XN --> KD : Bộ hẹn giờ: ghiNhanKhongDen()\n[quá giờ bắt đầu 15 phút chưa check-in]
+SD --> HT : Bộ hẹn giờ: hoanThanhBuoiChoi()\n[now ≥ giờ kết thúc]
+XN --> XN : doiLich() [còn ≥ 2 giờ ∧ chưa đổi lần nào]\nthemDichVu(), datLichHoc()
+HT --> [*]
+HUY --> [*]
+HH --> [*] : [khung đã có người đặt] / hoàn 100%
+KD --> [*]
+@enduml

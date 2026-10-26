@@ -1,0 +1,51 @@
+@startuml
+!include chung.iuml
+title Đặt sân – UC02.2 (POST /api/v1/don-dat-san)
+actor "Khách hàng" as KH
+boundary "DatSanPage\n(React)" as UI
+control "Middleware\nphanQuyen,\nkiemTraDuLieu" as MW
+control "DatSanController" as C
+control "DatSanService" as S
+entity "DonDatSanRepository" as DR
+entity "ChiTietDatSanRepository" as CR
+control "GiaCalculator" as G
+database "MySQL\n(Prisma)" as DB
+control "NotificationSender" as N
+
+KH -> UI : chọn ô trống trên lưới,\nbấm "Đặt sân & giữ chỗ"
+UI -> MW : POST /don-dat-san\n{ngayChoi, danhSach[], dinhKy?}
+MW -> MW : kiểm tra phiên, vai trò KH/LT;\nđịnh dạng ngày, sanId, khungGioId
+alt dữ liệu sai định dạng
+  MW --> UI : 400 DU_LIEU_KHONG_HOP_LE
+end
+MW -> C : datSan(req)
+C -> S : datSan(user, req)
+S -> S : kiemTraQuyTac(user, req)\n• tài khoản không bị khóa đặt trực tuyến (QT-18)\n• định kỳ 4–12 buổi, cùng một sân (QT-05)
+S -> DR : demDangCho(khachHangId)
+DR --> S : soDonCho
+alt soDonCho >= 2 (QT-03)
+  S --> UI : 422 VUOT_GIOI_HAN_DON_CHO
+end
+loop mỗi buổi (1 buổi, hoặc 4–12 buổi định kỳ)
+  S -> S : kiemTraSanKhung(ngay, danhSach)\nQT-01: ≤ 4 khung liền nhau / sân\nQT-02: trong 7 ngày, bắt đầu sau ≥ 30 phút\nsân đang HOAT_DONG
+  S -> CR : timTrung(ngay, dsSanKhung)
+  CR -> DB : SELECT chi_tiet_dat_san\nWHERE con_hieu_luc = 1 ...
+  CR --> S : dsTrung
+  alt dsTrung không rỗng
+    S --> UI : 409 TRUNG_LICH (details: các khung bị trùng)
+  end
+  S -> G : donGia(ngay, khungGio)\n(loaiNgay → khung giá hiệu lực, QT-07, QT-08)
+  G --> S : khungGiaId, donGia
+end
+S -> DB : $transaction: create DonDatSan\n(CHO_THANH_TOAN, hanGiuCho = now + 10 phút,\ntongTien = tiền sân − ưu đãi hạng)\n+ create ChiTietDatSan (con_hieu_luc = 1)
+alt hai yêu cầu cùng ghi một khung
+  DB --> S : P2002 vi phạm UNIQUE uq_khong_trung_lich
+  S --> UI : 409 TRUNG_LICH (middleware xuLyLoi đổi mã)
+else ghi thành công
+  DB --> S : DonDatSan (kèm chi tiết)
+  S ->> N : gui(email/SĐT, "đã giữ chỗ đến ...")
+  S --> C : don, soBuoi, cacDon
+  C --> UI : 201 { don: DonDatSanDTO, soBuoi, cacDon }
+  UI -> KH : chuyển sang /thanh-toan/{maDon}\nđồng hồ giữ chỗ 10 phút
+end
+@enduml

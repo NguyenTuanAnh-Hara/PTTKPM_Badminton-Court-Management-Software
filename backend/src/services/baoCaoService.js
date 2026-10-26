@@ -106,6 +106,7 @@ export async function lapDay({ tuNgay, denNgay }) {
     where: {
       sanId: { in: dsSan.map((s) => s.id) },
       ngayChoi: { gte: sangNgayDb(tuNgay), lte: sangNgayDb(denNgay) },
+      conHieuLuc: 1, // khung đã trả lại (đơn không đến, đổi lịch, sự cố) không tính, tránh đếm trùng khi khung được bán lại
       donDatSan: { trangThai: { in: TRANG_THAI_DA_BAN } },
     },
     select: { sanId: true, khungGioId: true },

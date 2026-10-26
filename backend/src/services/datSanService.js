@@ -16,7 +16,7 @@ import { ghiNhatKy } from './nhatKyService.js';
 import { notificationSender } from '../agents/notificationSender.js';
 import {
   bayGio, homNay, congNgay, congPhut, soNgayGiua, laNgayHopLe, sangNgayDb, chuoiGio, chuoiNgay,
-  thoiDiem, thuVietNam, hienThiThoiDiem, hienThiNgay,
+  thoiDiem, thuVietNam, hienThiThoiDiem, hienThiNgay, ngayCua,
 } from '../utils/thoiGian.js';
 import { taoMa } from '../utils/maSo.js';
 import { soTien, dinhDangTien, lamTronNghin } from '../utils/tien.js';
@@ -99,8 +99,15 @@ export async function kiemTraSanKhung(ngay, danhSach, { laNhanVien = false, boQu
     const k = khungTheoId.get(khungGioId);
     if (!k) throw loi.duLieu('Khung giờ không hợp lệ');
     const batDau = thoiDiem(ngay, chuoiGio(k.gioBatDau));
-    if (batDau < congPhut(bayGio(), thamSo.PHUT_DAT_TRUOC_TOI_THIEU)) {
-      throw loi.viPham('NGOAI_PHAM_VI_NGAY', `Khung ${chuoiGio(k.gioBatDau)} đã bắt đầu hoặc còn dưới ${thamSo.PHUT_DAT_TRUOC_TOI_THIEU} phút (QT-02)`);
+    // QT-02: khách đặt trực tuyến phải trước ≥ 30 phút; lễ tân (khách đến quầy) đặt được mọi khung chưa bắt đầu
+    const phutToiThieu = laNhanVien ? 0 : thamSo.PHUT_DAT_TRUOC_TOI_THIEU;
+    if (batDau < congPhut(bayGio(), phutToiThieu)) {
+      throw loi.viPham(
+        'NGOAI_PHAM_VI_NGAY',
+        laNhanVien
+          ? `Khung ${chuoiGio(k.gioBatDau)} đã bắt đầu`
+          : `Khung ${chuoiGio(k.gioBatDau)} đã bắt đầu hoặc còn dưới ${thamSo.PHUT_DAT_TRUOC_TOI_THIEU} phút (QT-02)`,
+      );
     }
     if (!nhom.has(sanId)) nhom.set(sanId, []);
     nhom.get(sanId).push(khungGioId);
@@ -348,10 +355,18 @@ export async function layDanhSachDon(user, boLoc = {}) {
   return { items: ds.map((d) => sangDTO(d, { xemNoiBo })), tong, trang, kichThuoc };
 }
 
+/** QT-27: đơn vừa bị chuyển sân do sự cố trong 30 phút gần đây – khách từ chối thì được hủy và hoàn 100% như hủy do phía sân */
+async function vuaChuyenSanDoSuCo(donId, db = prisma) {
+  const n = await db.nhatKyThaoTac.count({
+    where: { hanhDong: 'CHUYEN_SAN', doiTuong: 'don_dat_san', doiTuongId: donId, thoiGian: { gte: congPhut(bayGio(), -thamSo.PHUT_TU_CHOI_CHUYEN_SAN) } },
+  });
+  return n > 0;
+}
+
 export async function layChiTietDon(user, maDon) {
   const don = await donDatSanRepository.findByMaDon(maDon);
   kiemTraQuyenDon(user, don);
-  return { ...sangDTO(don, { xemNoiBo: user.vaiTro !== 'KHACH_HANG' }), duKienHoan: duKienHoan(don) };
+  return { ...sangDTO(don, { xemNoiBo: user.vaiTro !== 'KHACH_HANG' }), duKienHoan: duKienHoan(don, await vuaChuyenSanDoSuCo(don.id)) };
 }
 
 // ---------------------------------------------------------------- UC02.4 Hủy lịch đặt sân
@@ -367,6 +382,7 @@ export async function huyDon(user, maDon, { lyDo = '', doPhiaSan = false } = {})
     let hoan = { tongHoan: 0, diemHoan: 0, dong: [] };
     if (don.trangThai === 'DA_XAC_NHAN') {
       const { batDau } = khoangThoiGian(don);
+      if (!doPhiaSan && (await vuaChuyenSanDoSuCo(don.id, tx))) doPhiaSan = true; // QT-27
       const tyLe = tyLeHoan((batDau - bayGio()) / 3600000, doPhiaSan);
       if (!tyLe.duocHuy) throw loi.viPham('KHONG_DUOC_HUY', tyLe.lyDo);
       hoan = await hoanTienDon(tx, don, heSoHoan(tongHopDon(don), tyLe), { nhanVienId: user.vaiTro === 'LE_TAN' ? user.id : null });
@@ -496,7 +512,18 @@ export async function huyDonQuaHan() {
 
 /** Đếm số đơn “Không đến” của khách trong 30 ngày gần nhất và khóa đặt trực tuyến nếu đủ 3 lần (QT-18) */
 export async function kiemTraKhoaKhach(khachHangId, db = prisma) {
-  const tu = sangNgayDb(congNgay(homNay(), -thamSo.SO_NGAY_DEM_NO_SHOW));
+  // Chỉ đếm các lần “Không đến” trong 30 ngày gần nhất VÀ sau lần quản lý mở khóa gần nhất (UC06.5 – A1),
+  // để Bộ hẹn giờ không khóa lại ngay một tài khoản vừa được mở khóa
+  let tuNgay = congNgay(homNay(), -thamSo.SO_NGAY_DEM_NO_SHOW);
+  const moKhoa = await db.nhatKyThaoTac.findFirst({
+    where: { hanhDong: 'MO_KHOA', doiTuong: 'nguoi_dung', doiTuongId: khachHangId },
+    orderBy: { thoiGian: 'desc' },
+  });
+  if (moKhoa) {
+    const sauMoKhoa = congNgay(ngayCua(moKhoa.thoiGian), 1);
+    if (sauMoKhoa > tuNgay) tuNgay = sauMoKhoa;
+  }
+  const tu = sangNgayDb(tuNgay);
   const soLan = await db.donDatSan.count({
     where: { khachHangId, trangThai: 'KHONG_DEN', chiTiet: { some: { ngayChoi: { gte: tu } } } },
   });

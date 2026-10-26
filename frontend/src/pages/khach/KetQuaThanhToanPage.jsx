@@ -32,6 +32,16 @@ export default function KetQuaThanhToanPage() {
 
   const nutDon = kq.maDon ? <Button key="don" type="primary" onClick={() => nav('/don-cua-toi')}>Xem lịch đặt của tôi</Button> : <Button key="ud" type="primary" onClick={() => nav('/uu-dai')}>Về thành viên & gói giờ</Button>;
 
+  if (kq.daHoanLai) {
+    return (
+      <Result
+        status="info"
+        title="Giao dịch không còn hiệu lực – tiền sẽ được hoàn lại"
+        subTitle={kq.ghiChu}
+        extra={[kq.maDon && <Button key="lai" onClick={() => nav(`/thanh-toan/${kq.maDon}`)}>Xem / thanh toán lại đơn</Button>, nutDon]}
+      />
+    );
+  }
   if (!kq.thanhCong) {
     return (
       <Result

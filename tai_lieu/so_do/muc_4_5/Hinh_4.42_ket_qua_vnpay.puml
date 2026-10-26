@@ -1,0 +1,59 @@
+@startuml
+!include chung.iuml
+title Thanh toán trực tuyến – UC03.1: nhận kết quả từ VNPAY (IPN và trang kết quả)
+participant "Cổng VNPAY" as V
+actor "Khách hàng" as KH
+boundary "KetQuaThanhToanPage" as UI
+control "ThanhToanController" as C
+control "ThanhToanService" as S
+control "PaymentGateway\n(VnpayGateway)" as P
+entity "ThanhToanRepository" as TR
+control "DatSanService" as DS
+control "TrangThaiDon" as T
+database "MySQL\n(Prisma)" as DB
+control "NotificationSender" as N
+
+par VNPAY gọi IPN (máy chủ → máy chủ)
+  V -> C : GET /thanh-toan/vnpay-ipn?vnp_...&vnp_SecureHash
+  C -> S : xuLyKetQua(params)
+else trình duyệt quay về vnp_ReturnUrl
+  V -> KH : chuyển hướng
+  KH -> UI : /thanh-toan/ket-qua?vnp_...
+  UI -> C : GET /thanh-toan/vnpay-return?vnp_...
+  C -> S : xuLyKetQua(params) (cùng xử lý, lũy đẳng)
+end
+S -> P : xacMinhChuKy(params)
+alt sai chữ ký (bước 1)
+  S --> C : RspCode 97
+end
+S -> TR : findById(vnp_TxnRef)
+alt không thấy (bước 2) / sai số tiền (bước 3)
+  S --> C : RspCode 01 / 04
+end
+S -> TR : existsByMaGiaoDichCong(vnp_TransactionNo)
+alt đã THANH_CONG hoặc mã đã ghi (bước 4)
+  S --> C : RspCode 02 – không ghi lại (NFR-07)
+end
+alt vnp_ResponseCode ≠ "00" (bước 5)
+  S -> DB : UPDATE thanh_toan SET THAT_BAI\nWHERE id AND trang_thai = CHO_XU_LY
+  S --> C : RspCode 00 – thất bại, đơn vẫn chờ tới hết hạn giữ chỗ
+else thành công nhưng giao dịch không còn hiệu lực (bước 6)
+  S -> DB : ghi THANH_CONG + giao dịch HOAN_TIEN
+  S -> P : hoanTien(tt, soTien) – hoàn 100%
+  S ->> N : gui("giao dịch không còn hiệu lực, tiền sẽ được hoàn")
+  S --> C : RspCode 00, daHoanLai = true
+else thành công, hợp lệ (bước 7, 8)
+  S -> DB : $transaction:\nUPDATE ... SET ma_giao_dich_cong WHERE trang_thai = CHO_XU_LY\n(chỉ một tiến trình cập nhật được)
+  S -> DB : thanh_toan → THANH_CONG; thêm dòng DIEM_THUONG, GOI_GIO;\ntrừ điểm, trừ giờ gói; gắn mã giảm giá, tăng số lượt đã dùng
+  S -> DS : chuyenTrangThai(don, DA_XAC_NHAN)
+  DS -> T : choPhepChuyen(CHO_THANH_TOAN | HET_HAN, DA_XAC_NHAN)
+  T --> DS : true
+  note right of DS : đơn HET_HAN (bước 8): khung còn trống thì\nkhôi phục con_hieu_luc = 1; khung đã có người đặt\nthì hoàn 100% qua PaymentGateway.hoanTien()
+  S -> DB : create HoaDon
+  S ->> N : gui("đã thanh toán ..., hóa đơn HD...")
+  S --> C : RspCode 00, thanhCong, hoaDon
+end
+C --> V : (IPN) { RspCode, Message }
+C --> UI : (vnpay-return) { thanhCong, soTien, maDon, maHoaDon, ghiChu }
+UI -> KH : "Thanh toán thành công" + nút xem hóa đơn
+@enduml

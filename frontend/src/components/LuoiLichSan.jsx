@@ -9,7 +9,7 @@ const TEN_O = {
   DA_DAT: 'Đã đặt',
   CUA_TOI: 'Lịch của bạn',
   BAO_TRI: 'Sân bảo trì',
-  DA_QUA: 'Đã qua / sắp bắt đầu',
+  DA_QUA: 'Đã qua giờ đặt',
 };
 
 export function ChuThichLuoi({ cheDoNhanVien = false }) {
@@ -42,8 +42,8 @@ export default function LuoiLichSan({ lich, laChon = () => false, onBatTat, onXe
         <thead>
           <tr>
             <th className="cot-san">Sân</th>
-            {lich.khungGio.map((k) => (
-              <th key={k.id}>
+            {lich.khungGio.map((k, i) => (
+              <th key={k.id} className={lich.san.length && lich.san.every((s) => s.o[i]?.trangThai === 'DA_QUA') ? 'qua' : undefined}>
                 {k.gioBatDau}
                 <span className="gia">{ngan(k.donGia)}</span>
               </th>
@@ -55,7 +55,7 @@ export default function LuoiLichSan({ lich, laChon = () => false, onBatTat, onXe
             <tr key={s.id}>
               <td className="cot-san">
                 {s.tenSan}
-                <span className="gia">{s.loaiSan}</span>
+                <span className="gia">{s.trangThai === 'BAO_TRI' ? <span style={{ color: '#d46b08' }}>Đang bảo trì</span> : s.loaiSan}</span>
               </td>
               {s.o.map((o, i) => {
                 const k = lich.khungGio[i];

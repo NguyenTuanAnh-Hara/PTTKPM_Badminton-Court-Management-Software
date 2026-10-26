@@ -44,7 +44,8 @@ export async function layDanhMuc({ loai, ngay } = {}) {
 
 /**
  * Thêm dịch vụ vào đơn. Khách: chi tiết “Đã đặt” (giao khi check-in).
- * Lễ tân ghi nhận tại quầy (UC04.3): chi tiết “Đã giao”, trừ tồn kho ngay.
+ * Lễ tân ghi nhận tại quầy cho đơn đang chơi (UC04.3): chi tiết “Đã giao”, trừ tồn kho ngay;
+ * lễ tân thêm hộ cho đơn chưa đến giờ: “Đã đặt” như khách (FR-17).
  * items: [{ dichVuId, soLuong }]
  */
 export async function themVaoDon(user, maDon, items) {
@@ -70,7 +71,8 @@ export async function themVaoDon(user, maDon, items) {
         throw loi.viPham('HET_THIET_BI', `${dv.tenDichVu} chỉ còn ${Math.max(0, coThe)} có thể đặt (QT-24)`);
       }
       daDat.set(dv.id, (daDat.get(dv.id) ?? 0) + soLuong);
-      const giaoNgay = laLeTan;
+      // UC04.3: chỉ đơn đang chơi mới giao ngay tại quầy; đơn chưa đến giờ thì giữ “Đã đặt”, giao khi check-in (UC05.3)
+      const giaoNgay = laLeTan && don.trangThai === 'DANG_SU_DUNG';
       await tx.chiTietDichVu.create({
         data: {
           donDatSanId: don.id, dichVuId: dv.id, soLuong, donGia: dv.donGia,

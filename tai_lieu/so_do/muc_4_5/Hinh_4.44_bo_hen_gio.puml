@@ -1,0 +1,35 @@
+@startuml
+!include chung.iuml
+title Bộ hẹn giờ – UC02.6 Hủy đơn quá hạn giữ chỗ, UC01.6 Ghi nhận không đến, UC01.5 Hoàn thành và tích điểm
+control "LichTuDongScheduler\n(node-cron)" as J
+control "DatSanService" as S
+entity "DonDatSanRepository" as DR
+control "TrangThaiDon" as T
+database "MySQL\n(Prisma)" as DB
+control "NotificationSender" as N
+
+== mỗi phút ==
+J -> S : huyDonQuaHan()
+S -> DR : findQuaHanGiuCho(now)\n(CHO_THANH_TOAN và han_giu_cho < now)
+loop mỗi đơn
+  S -> T : choPhepChuyen(CHO_THANH_TOAN, HET_HAN)
+  S -> DB : $transaction: đơn → HET_HAN; con_hieu_luc = NULL;\nxóa dịch vụ chưa giao
+  S ->> N : gui("đơn ... đã hết thời gian giữ chỗ")
+end
+== mỗi 5 phút ==
+J -> S : ghiNhanKhongDen()
+S -> DR : findChuaCheckIn(hôm nay)
+loop đơn DA_XAC_NHAN đã quá giờ bắt đầu 15 phút (QT-17)
+  S -> DB : $transaction: đơn → KHONG_DEN; trả các khung chưa diễn ra;\nsoLanNoShow + 1
+  S -> S : kiemTraKhoaKhach(kh): đếm KHONG_DEN trong 30 ngày,\nsau lần mở khóa gần nhất (QT-18)
+  alt đủ 3 lần
+    S -> DB : nguoi_dung.trang_thai = KHOA_DAT_TRUC_TUYEN
+  end
+  S ->> N : gui("ghi nhận không đến ...")
+end
+J -> S : hoanThanhBuoiChoi()
+loop đơn DANG_SU_DUNG đã qua giờ kết thúc
+  S -> DB : đơn → DA_HOAN_THANH; buổi học → DA_DAY;\ndiemThuong += số giờ × 10 × hệ số hạng (QT-21)
+  S ->> N : gui("cảm ơn ..., mời đánh giá trong 7 ngày")
+end
+@enduml

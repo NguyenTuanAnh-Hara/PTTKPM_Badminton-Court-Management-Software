@@ -220,6 +220,7 @@ export async function ghiNhanSuCo(nhanVien, { sanId, moTa, denLuc }) {
  * hanhDong: CHUYEN_SAN (kèm sanMoiId) | HUY
  */
 export async function xuLyDonBiAnhHuong(nhanVien, { maDon, sanSuCoId, hanhDong, sanMoiId }) {
+  if (!['CHUYEN_SAN', 'HUY'].includes(hanhDong)) throw loi.duLieu('Hành động là CHUYEN_SAN hoặc HUY');
   const don = await donDatSanRepository.findByMaDon(maDon);
   kiemTraQuyenDon(nhanVien, don);
   const biAnhHuong = chiTietTinhTien(don).filter((c) => c.sanId === Number(sanSuCoId) && thoiDiem(chuoiNgay(c.ngayChoi), chuoiGio(c.khungGio.gioKetThuc)) > bayGio());

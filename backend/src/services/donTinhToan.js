@@ -208,7 +208,9 @@ export function sangDTO(don, { xemNoiBo = false } = {}) {
   const th = tongHopDon(don);
   const { batDau, ketThuc } = khoangThoiGian(don);
   const tong = soTien(don.tongTien);
-  const conPhaiThu = Math.max(0, tong - th.daThanhToan) < 1000 ? 0 : tong - th.daThanhToan;
+  // Chỉ đơn còn hiệu lực hoặc đã chơi xong mới có “còn phải thu”; đơn đã hủy, hết hạn, không đến thì không còn nợ
+  const conNo = ['CHO_THANH_TOAN', 'DA_XAC_NHAN', 'DANG_SU_DUNG', 'DA_HOAN_THANH'].includes(don.trangThai);
+  const conPhaiThu = !conNo || Math.max(0, tong - th.daThanhToan) < 1000 ? 0 : tong - th.daThanhToan;
   const now = bayGio();
   const conGio = batDau ? (batDau - now) / 3600000 : 0;
   const ketThucNgay = ketThuc ? congNgay(chuoiNgay(new Date(ketThuc.getTime() + 7 * 3600000)), thamSo.SO_NGAY_DUOC_DANH_GIA) : null;

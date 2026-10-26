@@ -6,6 +6,7 @@ import { LOAI_DICH_VU, ngayChoiCuaDon, tien } from '../../utils/format.js';
 // UC04.1 Thuê thiết bị, UC04.2 Đặt đồ uống/dịch vụ (khách), UC04.3 Ghi nhận dịch vụ tại quầy (lễ tân)
 export default function DichVuModal({ don, laNhanVien, onClose, onXong }) {
   const { message } = App.useApp();
+  const giaoNgay = laNhanVien && don.trangThai === 'DANG_SU_DUNG'; // UC04.3: chỉ đơn đang chơi mới giao ngay
   const [ds, setDs] = useState([]);
   const [soLuong, setSoLuong] = useState({});
   const [dangTai, setDangTai] = useState(true);
@@ -30,7 +31,7 @@ export default function DichVuModal({ don, laNhanVien, onClose, onXong }) {
     setDangGui(true);
     try {
       await dichVuApi.themVaoDon(don.maDon, items);
-      message.success(laNhanVien ? 'Đã ghi nhận dịch vụ và trừ kho' : 'Đã thêm dịch vụ vào đơn');
+      message.success(giaoNgay ? 'Đã ghi nhận dịch vụ và trừ kho' : 'Đã thêm dịch vụ vào đơn');
       onXong?.();
       onClose();
     } catch (e) {
@@ -44,7 +45,7 @@ export default function DichVuModal({ don, laNhanVien, onClose, onXong }) {
     <Modal
       open
       width={720}
-      title={laNhanVien ? `Ghi nhận dịch vụ tại quầy – đơn ${don.maDon}` : `Thêm dịch vụ cho đơn ${don.maDon}`}
+      title={giaoNgay ? `Ghi nhận dịch vụ tại quầy – đơn ${don.maDon}` : `Thêm dịch vụ cho đơn ${don.maDon}`}
       onCancel={onClose}
       okText={`Thêm (${tien(tong)})`}
       okButtonProps={{ disabled: !items.length, loading: dangGui }}
@@ -55,9 +56,11 @@ export default function DichVuModal({ don, laNhanVien, onClose, onXong }) {
         showIcon
         style={{ marginBottom: 12 }}
         message={
-          laNhanVien
+          giaoNgay
             ? `Dịch vụ được giao ngay và trừ tồn kho. Thiết bị thu tiền cọc khi giao${coc ? `: ${tien(coc)}` : ''}, hoàn khi khách trả nguyên vẹn (QT-25).`
-            : 'Thiết bị được giao khi bạn check-in; tiền cọc thu tại quầy và hoàn khi trả thiết bị (QT-25). Dịch vụ chưa giao có thể bỏ trước giờ chơi.'
+            : laNhanVien
+              ? 'Đơn chưa đến giờ chơi: dịch vụ được giữ “Đã đặt” và giao khi khách check-in; tiền cọc thiết bị thu khi giao (QT-25).'
+              : 'Thiết bị được giao khi bạn check-in; tiền cọc thu tại quầy và hoàn khi trả thiết bị (QT-25). Dịch vụ chưa giao có thể bỏ trước giờ chơi.'
         }
       />
       <Table
