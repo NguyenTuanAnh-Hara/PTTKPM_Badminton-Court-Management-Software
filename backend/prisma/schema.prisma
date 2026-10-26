@@ -436,6 +436,7 @@ model ThanhToan {
   soDiemSuDung    Int?              @map("so_diem_su_dung")
   soTien          Decimal           @map("so_tien") @db.Decimal(12, 0)
   maGiaoDichCong  String?           @unique @map("ma_giao_dich_cong") @db.VarChar(50)
+  duLieuDoiLich   Json?             @map("du_lieu_doi_lich")
   trangThai       TrangThaiGiaoDich @map("trang_thai")
   thoiGian        DateTime          @default(now()) @map("thoi_gian")
 

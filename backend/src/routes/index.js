@@ -1,5 +1,6 @@
 // Khai báo toàn bộ API /api/v1 (Bảng 4.19). Mỗi route: middleware phân quyền → kiểm tra dữ liệu → controller.
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { yeuCauDangNhap, phanQuyen } from '../middlewares/auth.js';
 import { kiemTraDuLieu as kt } from '../middlewares/kiemTraDuLieu.js';
 import { luat } from '../validators/index.js';
@@ -20,13 +21,27 @@ const KH_LT = phanQuyen('KHACH_HANG', 'LE_TAN');
 const KH_LT_QL = phanQuyen('KHACH_HANG', 'LE_TAN', 'QUAN_LY');
 const LT_QL = phanQuyen('LE_TAN', 'QUAN_LY');
 
+// Chống dò mật khẩu / OTP và spam email OTP: 10 lần mỗi 15 phút cho mỗi IP
+// ponytail: bộ đếm trong RAM, chạy nhiều tiến trình thì cần store dùng chung (Redis/MySQL)
+const gioiHan = (tuyChon) =>
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { code: 'QUA_NHIEU_YEU_CAU', message: 'Bạn thử quá nhiều lần, vui lòng đợi 15 phút rồi thử lại' },
+    ...tuyChon,
+  });
+const gioiHanDangNhap = gioiHan({ skipSuccessfulRequests: true }); // chỉ đếm lần đăng nhập sai
+const gioiHanAuth = gioiHan();
+
 // ---------- UC01 Tài khoản & Thành viên
-r.post('/auth/dang-ky', kt(luat.dangKy), AuthController.dangKy);
-r.post('/auth/dang-nhap', kt(luat.dangNhap), AuthController.dangNhap);
+r.post('/auth/dang-ky', gioiHanAuth, kt(luat.dangKy), AuthController.dangKy);
+r.post('/auth/dang-nhap', gioiHanDangNhap, kt(luat.dangNhap), AuthController.dangNhap);
 r.post('/auth/dang-xuat', AuthController.dangXuat);
 r.get('/auth/toi', AuthController.toi);
-r.post('/auth/quen-mat-khau', kt(luat.quenMatKhau), AuthController.quenMatKhau);
-r.post('/auth/dat-lai-mat-khau', kt(luat.datLaiMatKhau), AuthController.datLaiMatKhau);
+r.post('/auth/quen-mat-khau', gioiHanAuth, kt(luat.quenMatKhau), AuthController.quenMatKhau);
+r.post('/auth/dat-lai-mat-khau', gioiHanAuth, kt(luat.datLaiMatKhau), AuthController.datLaiMatKhau);
 r.get('/tai-khoan/toi', yeuCauDangNhap, TaiKhoanController.thongTin);
 r.put('/tai-khoan/toi', yeuCauDangNhap, kt(luat.capNhatThongTin), TaiKhoanController.capNhat);
 r.put('/tai-khoan/toi/mat-khau', yeuCauDangNhap, kt(luat.doiMatKhau), TaiKhoanController.doiMatKhau);
@@ -52,7 +67,7 @@ r.post('/thanh-toan/tai-quay', LT, kt([...luat.thanhToan, ...luat.thuTaiQuay]), 
 r.post('/thanh-toan/tai-quay/ban-goi', LT, kt(luat.thuTaiQuay), ThanhToanController.banTaiQuay);
 r.get('/thanh-toan/vnpay-ipn', ThanhToanController.nhanIpn);
 r.get('/thanh-toan/vnpay-return', ThanhToanController.ketQuaTrinhDuyet);
-r.get('/thanh-toan/gia-lap', ThanhToanController.giaLap);
+r.get('/thanh-toan/gia-lap', KH_LT_QL, ThanhToanController.giaLap);
 r.get('/hoa-don/:maHoaDon', yeuCauDangNhap, ThanhToanController.layHoaDon);
 
 // ---------- UC04 Dịch vụ đi kèm

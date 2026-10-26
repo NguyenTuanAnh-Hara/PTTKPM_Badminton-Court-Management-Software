@@ -17,6 +17,11 @@ export class VnpayGateway extends PaymentGateway {
   constructor(cauHinh = {}) {
     super();
     this.mode = cauHinh.mode ?? process.env.VNPAY_MODE ?? 'mock';
+    if (!['mock', 'sandbox'].includes(this.mode)) throw new Error(`VNPAY_MODE không hợp lệ: "${this.mode}" (chỉ nhận mock | sandbox)`);
+    // Ở chế độ mock, ai cũng tự ký được kết quả "thanh toán thành công" → tuyệt đối không bật trên production
+    if (this.mode === 'mock' && (cauHinh.nodeEnv ?? process.env.NODE_ENV) === 'production') {
+      throw new Error('VNPAY_MODE=mock không được dùng khi NODE_ENV=production');
+    }
     this.tmnCode = cauHinh.tmnCode ?? process.env.VNPAY_TMN_CODE ?? 'GIALAP01';
     this.hashSecret = cauHinh.hashSecret ?? process.env.VNPAY_HASH_SECRET ?? 'chuoi-bi-mat-gia-lap';
     this.url = cauHinh.url ?? process.env.VNPAY_URL ?? 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html';
@@ -24,7 +29,7 @@ export class VnpayGateway extends PaymentGateway {
   }
 
   get laGiaLap() {
-    return this.mode !== 'sandbox';
+    return this.mode === 'mock';
   }
 
   ky(params) {

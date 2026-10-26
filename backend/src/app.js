@@ -19,6 +19,16 @@ function cauHinhCsdl() {
   };
 }
 
+const SECRET_MAU = ['', 'doi-chuoi-nay', 'doi-chuoi-nay-thanh-chuoi-ngau-nhien'];
+
+function laySessionSecret() {
+  const s = process.env.SESSION_SECRET ?? '';
+  if (process.env.NODE_ENV === 'production' && (SECRET_MAU.includes(s) || s.length < 32)) {
+    throw new Error('SESSION_SECRET phải là chuỗi ngẫu nhiên ≥ 32 ký tự khi chạy production');
+  }
+  return s || 'doi-chuoi-nay';
+}
+
 export function taoUngDung() {
   const app = express();
   app.set('trust proxy', 1);
@@ -28,7 +38,7 @@ export function taoUngDung() {
   app.use(
     session({
       name: 'scl.sid',
-      secret: process.env.SESSION_SECRET || 'doi-chuoi-nay',
+      secret: laySessionSecret(),
       store: new MySQLStore({ ...cauHinhCsdl(), clearExpired: true, createDatabaseTable: true }),
       resave: false,
       saveUninitialized: false,
